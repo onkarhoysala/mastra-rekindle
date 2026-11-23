@@ -8,7 +8,7 @@ It calls Mastra's `run.restart()`, which resumes a run from its last active step
 
 > As of 17 Nov 2026, Mastra has this built in. `@mastra/core` 1.84.0 shipped native workflow recovery, with run leases, a recovery loop and leader election.
 
-We needed it back in May/June though. Our agent platform at Flash runs long workflows (scout runs ~18 min, research batches ~30 min), and every deploy or crash left them stuck in `running`. So I built this, first commit in our internal repo on 9 Jul 2026. It's been running in production since then across 8 of our agents.
+We needed it back in May/June 2026, though, when we were running 1.4x. Our agent platform at Flash runs long workflows (scout runs ~18 min, research batches ~30 min), and every deploy or crash left them stuck in `running`. So I built this, first commit in our internal repo on 9 Jul 2026. It's been running in production since then across 8 of our agents.
 
 If you're on Mastra 1.84 or later, use the native recovery. We're moving to it too. rekindle is for codebases still on 1.46 to 1.83, like one of ours. Tested on 1.46 and 1.78, maintained as needed.
 

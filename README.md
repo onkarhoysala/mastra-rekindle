@@ -45,9 +45,11 @@ If you're on Mastra 1.84 or later, use the native recovery. We're moving to it t
 Workflows have to opt in.
 
 1. Register the workflow: `const ownership = rekindleWorkflow('myWorkflow')`, with the same key you use in `new Mastra({ workflows })`.
-2. Call `await ownership.guard(runId)` as the first line of every step, using the `runId` Mastra passes to `execute`. Your input schemas don't change. A step without a guard (an agent passed straight to `createStep`, `.map`, a nested workflow) leaves the run unprotected while it runs, so wrap that work in a step that guards.
+2. Call `await ownership.guard(runId)` as the first line of every step, using the `runId` Mastra passes to `execute`. Your input schemas don't change.
+
+   Never guard on a field from `inputData`, even one called `runId`. If you start runs with your own ids (`createRun({ runId: ... })`), the input field and Mastra's run id can differ. The guard then protects a run the sweep never sees, and the real run has no owner, so a long live step can look abandoned and get restarted while it's still running. A step without a guard (an agent passed straight to `createStep`, `.map`, a nested workflow) leaves the run unprotected while it runs, so wrap that work in a step that guards.
 3. Make every step safe to re-run. `restart()` reruns the interrupted step from its start and skips completed steps, so a step has to re-read its inputs and write without duplicating.
-4. Call `await ownership.clear(runId)` in the last step.
+4. Call `await ownership.clear(runId)` in the last step. It marks the run done and sets its owner to null, so a finished run shows `done_at` set and no owner.
 
 ```ts
 // workflows/my-workflow.ts
@@ -82,13 +84,21 @@ export const mastra = new Mastra({
 
 const rekindle = createRekindle({ mastra })  // uses Mastra's Postgres pool, schema and logger
 await rekindle.migrate()          // or run migrationSql('<schema>') in your own migrations
-await rekindle.start()            // before serving requests: guards fail until the first heartbeat
-rekindle.installSignalHandlers()  // SIGTERM/SIGINT -> drain, then exit unless you handle the signal yourself
+await rekindle.start()            // a guard that runs before this has heartbeated waits for it (up to guardWindowMs)
+
+// Already have a SIGTERM handler? Call rekindle.drain() in it:
+process.on('SIGTERM', async () => {
+  rekindle.drain()   // stop claiming runs, keep heartbeating so in-flight runs aren't taken over
+  await yourShutdown()
+  process.exit(0)
+})
+// No handler of your own? Use this instead: drain, then stop and exit.
+// rekindle.installSignalHandlers()
 ```
 
 `recovery: { workflows: 'off' }`: newer versions in the supported range have a `recovery` option that restarts every active run on boot, and it defaults to on (eg 1.78). Turn it off, otherwise every booting instance restarts every active run alongside rekindle. Older versions (eg 1.46) don't have the option and don't restart on boot in production, so leave the line out there; it's a type error on those versions. `mastra dev` on those versions does restart active runs when it reloads, which is fine locally.
 
-`installSignalHandlers()` drains on SIGTERM/SIGINT. If nothing else listens for the signal, it then stops rekindle and re-raises the signal, so the process exits as usual. If your app has its own handler, rekindle only drains and keeps heartbeating, and the exit is up to your shutdown code. Pass `{ exit: false }` to only drain either way.
+Shutdown: if your app owns SIGTERM, call `rekindle.drain()` in your handler. That's all it needs. If it doesn't, `installSignalHandlers()` drains on SIGTERM/SIGINT, then stops rekindle and re-raises the signal so the process exits as usual. Installed alongside a handler of your own, it only drains and leaves the exit to you. Pass `{ exit: false }` to only drain either way.
 
 `instanceId` has to be unique among live processes. The default (random per boot) is fine. A readable id makes `rekindle_instances` easier to match to your servers: `os.hostname()`, a pod name, or on ECS the task ARN:
 

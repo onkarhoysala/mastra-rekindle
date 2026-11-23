@@ -187,12 +187,38 @@ export function createRekindle(options: RekindleOptions): Rekindle {
 
   const jitter = (max: number) => (max > 0 ? Math.floor(Math.random() * max) : 0)
 
+  // Resolves on this instance's first heartbeat. A guard that runs earlier (eg the app starts
+  // rekindle without awaiting it and a run lands first) waits on it instead of failing.
+  let hasHeartbeated = false
+  let markFirstHeartbeat!: () => void
+  const firstHeartbeat = new Promise<void>((resolve) => {
+    markFirstHeartbeat = resolve
+  })
+
   async function heartbeatOnce(): Promise<void> {
     await pool.query(
       `INSERT INTO ${instances} (instance_id, heartbeat_at) VALUES ($1, now())
        ON CONFLICT (instance_id) DO UPDATE SET heartbeat_at = now()`,
       [instanceId]
     )
+    if (!hasHeartbeated) {
+      hasHeartbeated = true
+      markFirstHeartbeat()
+    }
+  }
+
+  /** True if this instance heartbeats before `deadline`. */
+  async function awaitFirstHeartbeat(deadline: number): Promise<boolean> {
+    if (hasHeartbeated) return true
+    let timer: NodeJS.Timeout | undefined
+    const timedOut = new Promise<false>((resolve) => {
+      timer = setTimeout(() => resolve(false), Math.max(0, deadline - Date.now()))
+    })
+    try {
+      return await Promise.race([firstHeartbeat.then(() => true as const), timedOut])
+    } finally {
+      clearTimeout(timer)
+    }
   }
 
   /** Take or keep the run unless it's done or a different, live instance owns it. */
@@ -231,6 +257,7 @@ export function createRekindle(options: RekindleOptions): Rekindle {
     // owner's heartbeat crosses the threshold. A dead owner becomes takeable inside the window;
     // a live competitor stays fresh the whole time, and then this step must stop.
     const deadline = Date.now() + guardWindowMs
+    if (!(await awaitFirstHeartbeat(deadline))) throw new RekindleNotStartedError(workflowName, 'no-heartbeat')
     for (;;) {
       if (await holdOwnership(workflowName, runId)) return
       const blocker = await guardBlocker(workflowName, runId)

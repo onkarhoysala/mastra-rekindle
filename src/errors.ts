@@ -24,7 +24,7 @@ export class OwnershipLostError extends Error {
   }
 }
 
-/** Thrown by a guard that runs before createRekindle(), or before this instance's first heartbeat. */
+/** Thrown by a guard that runs before createRekindle(), or when start() hasn't heartbeated within the guard window. */
 export class RekindleNotStartedError extends Error {
   constructor(
     readonly workflowName: string,
@@ -33,7 +33,7 @@ export class RekindleNotStartedError extends Error {
     super(
       reason === 'no-instance'
         ? `rekindle: guard for workflow "${workflowName}" ran before createRekindle(); create the instance when your server boots`
-        : `rekindle: guard for workflow "${workflowName}" ran before this instance's first heartbeat; await rekindle.start() before serving workflows`
+        : `rekindle: guard for workflow "${workflowName}" waited the guard window and this instance never heartbeated; call rekindle.start() when your server boots`
     )
     this.name = 'RekindleNotStartedError'
   }

@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { OwnershipLostError, RekindleNotStartedError } from '../src/index.js'
-import { ageHeartbeat, dropSchema, freshSchema, makePool, makeRekindle, ownerOf } from './helpers.js'
+import { ageHeartbeat, dropSchema, freshSchema, makePool, makeRekindle, ownerOf, sleep } from './helpers.js'
 
 const pool = makePool()
 let schema: string
@@ -78,9 +78,24 @@ describe('guard (the per-step fence)', () => {
     expect((await ownerOf(pool, schema, 'g-dying'))?.owner_instance_id).toBe(next.instanceId)
   })
 
-  it('fails clearly when this instance has never heartbeated', async () => {
-    const a = makeRekindle(pool, schema)
+  it('fails clearly when this instance never heartbeats within the guard window', async () => {
+    const a = makeRekindle(pool, schema, { guardWindowMs: 300 })
+    const started = Date.now()
     await expect(a.guard('wf', 'g-no-beat')).rejects.toBeInstanceOf(RekindleNotStartedError)
+    expect(Date.now() - started).toBeGreaterThanOrEqual(250)
+  })
+
+  it('waits for start() when a run reaches its guard before rekindle has started', async () => {
+    const a = makeRekindle(pool, schema, { workflows: [] })
+    const guarded = a.guard('wf', 'g-early')
+    await sleep(300) // eg the app boots rekindle without awaiting it, and a run lands first
+    await a.start({ getWorkflow: () => { throw new Error('unused') } })
+    try {
+      await expect(guarded).resolves.toBeUndefined()
+      expect((await ownerOf(pool, schema, 'g-early'))?.owner_instance_id).toBe(a.instanceId)
+    } finally {
+      await a.stop()
+    }
   })
 
   it('fails at once, saying so, on a run already marked done', async () => {

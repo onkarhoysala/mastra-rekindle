@@ -541,17 +541,3 @@ export function createRekindle(options: RekindleOptions): Rekindle {
   if (options.setAsDefault ?? true) setDefaultProvider(rekindle)
   return rekindle
 }
-
-/** The ECS task ARN when running on ECS, else null. Handy as a readable `instanceId`. */
-export async function ecsTaskInstanceId(): Promise<string | null> {
-  const base = process.env.ECS_CONTAINER_METADATA_URI_V4
-  if (!base) return null
-  try {
-    const res = await fetch(`${base}/task`, { signal: AbortSignal.timeout(2000) })
-    if (!res.ok) return null
-    const meta = (await res.json()) as { TaskARN?: string }
-    return meta.TaskARN ?? null
-  } catch {
-    return null
-  }
-}

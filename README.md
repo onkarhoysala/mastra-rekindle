@@ -90,7 +90,20 @@ rekindle.installSignalHandlers()  // SIGTERM/SIGINT -> drain, then exit unless y
 
 `installSignalHandlers()` drains on SIGTERM/SIGINT. If nothing else listens for the signal, it then stops rekindle and re-raises the signal, so the process exits as usual. If your app has its own handler, rekindle only drains and keeps heartbeating, and the exit is up to your shutdown code. Pass `{ exit: false }` to only drain either way.
 
-`instanceId` has to be unique among live processes. The default (random per boot) is fine. A stable id like a pod name also works, since `start()` lets go of what the previous process with that id held.
+`instanceId` has to be unique among live processes. The default (random per boot) is fine. A readable id makes `rekindle_instances` easier to match to your servers: `os.hostname()`, a pod name, or on ECS the task ARN:
+
+```ts
+async function ecsTaskArn(): Promise<string | undefined> {
+  const base = process.env.ECS_CONTAINER_METADATA_URI_V4
+  if (!base) return undefined
+  const res = await fetch(`${base}/task`, { signal: AbortSignal.timeout(2000) }).catch(() => null)
+  return res?.ok ? ((await res.json()) as { TaskARN?: string }).TaskARN : undefined
+}
+
+const rekindle = createRekindle({ mastra, instanceId: await ecsTaskArn() })
+```
+
+A stable id like a pod name also works across restarts, since `start()` lets go of what the previous process with that id held.
 
 ## Options
 
@@ -99,7 +112,7 @@ rekindle.installSignalHandlers()  // SIGTERM/SIGINT -> drain, then exit unless y
 | `mastra` | | Your Mastra instance. Its storage has to be a `PostgresStore`. |
 | `pool` | Mastra's | Override the `pg` Pool. |
 | `schema` | Mastra's | Override the schema for the two tables. |
-| `instanceId` | random per boot | This process's id, unique among live processes. `ecsTaskInstanceId()` gives you the ECS task ARN. |
+| `instanceId` | random per boot | This process's id, unique among live processes. |
 | `heartbeatMs` | 5s | Heartbeat interval. |
 | `staleMs` | 20s | Heartbeat older than this and the instance counts as dead. Has to be more than `heartbeatMs`. |
 | `guardRetryMs` / `guardWindowMs` | 3s / staleMs + 5s | How long the guard waits for an owner that just died to go stale. |

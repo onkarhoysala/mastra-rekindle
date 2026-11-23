@@ -1,4 +1,4 @@
-export { createRekindle, ecsTaskInstanceId } from './rekindle.js'
+export { createRekindle } from './rekindle.js'
 export type { ListedRun, MastraLike, Rekindle, RekindleOptions, SignalHandlerOptions, SweepResult } from './rekindle.js'
 export { rekindleWorkflow, registeredWorkflows, setDefaultProvider } from './registry.js'
 export type { OwnershipProvider, WorkflowOwnership } from './registry.js'

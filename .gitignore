@@ -1,0 +1,9 @@
+node_modules
+dist
+.pgdata
+*.log
+*.tgz
+.env
+.idea/
+.claude/
+.DS_Store

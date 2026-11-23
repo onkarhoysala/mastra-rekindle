@@ -1,0 +1,65 @@
+{
+  "name": "mastra-rekindle",
+  "version": "0.1.0",
+  "description": "Resume abandoned Mastra workflow runs once, on one instance, after a crash or deploy.",
+  "license": "MIT",
+  "author": "Onkar Hoysala",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/onkarhoysala/mastra-rekindle.git"
+  },
+  "homepage": "https://github.com/onkarhoysala/mastra-rekindle#readme",
+  "bugs": "https://github.com/onkarhoysala/mastra-rekindle/issues",
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "sideEffects": false,
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "clean": "node -e \"require('node:fs').rmSync('dist', { recursive: true, force: true })\"",
+    "prepack": "npm run clean && npm run build",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "db:start": "bash scripts/test-db.sh start",
+    "db:stop": "bash scripts/test-db.sh stop"
+  },
+  "keywords": [
+    "mastra",
+    "workflow",
+    "resilience",
+    "recovery",
+    "postgres",
+    "agents"
+  ],
+  "peerDependencies": {
+    "@mastra/core": ">=1.46.0 <1.84.0",
+    "pg": "^8.11.0"
+  },
+  "devDependencies": {
+    "@mastra/core": "1.78.0",
+    "@mastra/pg": "1.32.0",
+    "@types/node": "^26.6.6",
+    "@types/pg": "^8.23.1",
+    "pg": "^8.23.1",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2",
+    "vitest": "^5.1.1",
+    "zod": "^4.6.7"
+  }
+}

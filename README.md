@@ -4,6 +4,8 @@ Rekindle restarts Mastra workflow runs that were left `running` (or `waiting` in
 
 It calls Mastra's `run.restart()`, which resumes a run from its last active step. Each instance writes a heartbeat to Postgres and claims a run before restarting it. A periodic sweep looks for runs to claim, and a guard at the start of each step checks ownership.
 
+Blog post with the full walkthrough: [Picking up Mastra workflow runs after a crash](https://onkarhoysala.com/blog/mastra-rekindle/).
+
 ## Why this was needed
 
 > As of 17 Nov 2026, Mastra has this built in. `@mastra/core` 1.84.0 shipped native workflow recovery, with run leases, a recovery loop and leader election.

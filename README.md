@@ -121,7 +121,7 @@ A stable id like a pod name also works across restarts, since `start()` lets go 
 
 | Option | Default | |
 |---|---|---|
-| `mastra` | | Your Mastra instance. Its storage has to be a `PostgresStore`. |
+| `mastra` | required | Your Mastra instance. Its storage has to be a `PostgresStore`, unless you pass `pool` and `schema`. |
 | `pool` | Mastra's | Override the `pg` Pool. |
 | `schema` | Mastra's | Override the schema for the two tables. |
 | `instanceId` | random per boot | This process's id, unique among live processes. |
@@ -136,7 +136,9 @@ A stable id like a pod name also works across restarts, since `start()` lets go 
 | `pruneAfterMs` | 1h | Dead instance rows and finished owner rows older than this get deleted. |
 | `workflows` | everything registered | Which workflows to sweep. |
 | `logger` | Mastra's logger | Anything with `info` / `warn` / `error`. |
-| `setAsDefault` | true | Make this the instance `rekindleWorkflow()` guards go through. |
+| `setAsDefault` | true | Make this the Rekindle object `rekindleWorkflow()` guards go through. |
+
+A missing or invalid option throws `RekindleConfigError`.
 
 ## Demo
 
@@ -170,7 +172,7 @@ PASS: resumed on B at the interrupted step, gather not re-run
 
 ## Tests
 
-The tests need a real Postgres. One runs a real Mastra workflow, stops its instance mid-step and checks another instance resumes it from that step. The rest cover five instances claiming the same run (one gets it), takeover from a dead owner, leaving a live owner alone, the guard aborting in a process that was taken over, the guard waiting for the stale window, done runs, the attempt cap and its warning, option validation, `waiting` runs, paging, a reused `instanceId`, release after a failed restart, the per-sweep cap, opt-in, drain and signal handling.
+The tests need a real Postgres. One runs a real Mastra workflow, stops its instance mid-step and checks another instance resumes it from that step. The rest cover five instances claiming the same run (one gets it), takeover from a dead owner, leaving a live owner alone, the guard aborting in a process that was taken over, the guard waiting for the stale window, done runs, the attempt cap and its warning, option validation, `waiting` runs, paging, a reused `instanceId`, release after a failed restart, the per-sweep cap, opt-in, drain and signal handling. Option validation (`test/config.test.ts`) runs without a database.
 
 ```bash
 npm run db:start
@@ -184,6 +186,7 @@ TEST_DATABASE_URL=postgres://postgres@localhost:54329/postgres npm test
 - A hung step on a live instance isn't detected. That would need per-step deadlines.
 - Suspend and resume across instances doesn't work: if a run suspends on A while A stays up, a resume that lands on B fails its guard.
 - When you first roll this out, runs that started before the deploy and haven't been updated for 20s can be restarted.
+- Known issue: a sweep pages through a workflow's active runs by offset. With more than `sweepPageSize` (100) active runs of one workflow, a run that finishes mid-sweep shifts the pages and another run is skipped for that sweep. If that run's owner row was last claimed more than `pruneAfterMs` ago, the sweep prunes it, and the next sweep can restart the run while it's still going. Keep `sweepPageSize` above your peak active runs per workflow.
 - Postgres only.
 
 ## License

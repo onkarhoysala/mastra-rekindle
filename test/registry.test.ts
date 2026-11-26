@@ -31,7 +31,7 @@ describe('rekindleWorkflow (one line per workflow)', () => {
   it('guard() and clear() go through the default instance once one exists', async () => {
     const ownership = rekindleWorkflow('reportRun')
     const rk = makeRekindle(pool, schema, { setAsDefault: true })
-    await rk.heartbeatOnce()
+    await rk.heartbeat()
 
     await ownership.guard('r-2')
     expect((await ownerOf(pool, schema, 'r-2'))?.owner_instance_id).toBe(rk.instanceId)

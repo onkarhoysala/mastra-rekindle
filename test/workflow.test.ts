@@ -5,9 +5,10 @@ import { PostgresStore } from '@mastra/pg'
 import type pg from 'pg'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { z } from 'zod'
-import { createRekindle, rekindleWorkflow, type Rekindle } from '../src/index.js'
+import { rekindleWorkflow, type Rekindle } from '../src/index.js'
+import { assembleRekindle } from '../src/rekindle.js'
 import { resetRegistry } from '../src/registry.js'
-import { ageHeartbeat, dropSchema, freshSchema, makePool, ownerOf, sleep } from './helpers.js'
+import { ageHeartbeat, dropSchema, freshSchema, makePool, ownerOf, sleep, type TestRekindle } from './helpers.js'
 
 const pool = makePool()
 let schema: string
@@ -30,8 +31,13 @@ async function mastraWith(workflows: Record<string, ReturnType<typeof createWork
   return new Mastra({ workflows, storage, logger: false })
 }
 
-function quickRekindle(mastra: Mastra, instanceId: string, extra: { workflows?: string[]; setAsDefault?: boolean } = {}) {
-  return createRekindle({
+/** Pool and schema come from Mastra's PostgresStore, as they would in an app. */
+function quickRekindle(
+  mastra: Mastra,
+  instanceId: string,
+  extra: { workflows?: string[]; setAsDefault?: boolean } = {}
+): TestRekindle {
+  const { rekindle, store, heartbeat } = assembleRekindle({
     mastra,
     instanceId,
     heartbeatMs: 200,
@@ -40,6 +46,7 @@ function quickRekindle(mastra: Mastra, instanceId: string, extra: { workflows?: 
     setAsDefault: false,
     ...extra,
   })
+  return Object.assign(rekindle, { store, heartbeat })
 }
 
 async function until(check: () => boolean | Promise<boolean>, ms = 15_000) {
@@ -66,7 +73,7 @@ describe('a real Mastra workflow', () => {
     const mastra = await mastraWith({ noRunIdInput })
     const rekindle = quickRekindle(mastra, `inst-${randomUUID().slice(0, 8)}`, { setAsDefault: true })
     await rekindle.migrate()
-    await rekindle.heartbeatOnce()
+    await rekindle.heartbeat()
 
     const run = await mastra.getWorkflow('noRunIdInput').createRun()
     const result = await run.start({ inputData: { topic: 'demo' } })
@@ -120,11 +127,11 @@ describe('a real Mastra workflow', () => {
         .commit()
     }
 
-    let rkA!: Rekindle
+    let rkA!: TestRekindle
     const mastraA = await mastraWith({ crashRun: crashRun('A', () => rkA, true) })
     rkA = quickRekindle(mastraA, 'A', { workflows: ['crashRun'] })
     await rkA.migrate()
-    await rkA.heartbeatOnce()
+    await rkA.heartbeat()
 
     const runA = await mastraA.getWorkflow('crashRun').createRun()
     void runA.start({ inputData: { topic: 'demo' } })
@@ -133,12 +140,12 @@ describe('a real Mastra workflow', () => {
     // A "dies": no more heartbeats.
     await ageHeartbeat(pool, schema, 'A', 60)
 
-    let rkB!: Rekindle
+    let rkB!: TestRekindle
     const mastraB = await mastraWith({ crashRun: crashRun('B', () => rkB, false) })
     rkB = quickRekindle(mastraB, 'B', { workflows: ['crashRun'] })
-    await rkB.heartbeatOnce()
+    await rkB.heartbeat()
 
-    const swept = await rkB.sweepOnce(mastraB)
+    const swept = await rkB.sweepOnce()
     expect(swept.restarted).toBe(1)
     await until(() => log.includes('third@B'))
 

@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { createRekindle, migrationSql } from '../src/index.js'
-import { dropSchema, freshSchema, makePool, makeRekindle } from './helpers.js'
+import { dropSchema, freshSchema, makePool, makeRekindle, noWorkflowsMastra } from './helpers.js'
 
 const pool = makePool()
 let schema: string
@@ -53,7 +53,7 @@ describe('migrate', () => {
   })
 
   it('refuses a schema name that is not a plain identifier', () => {
-    expect(() => createRekindle({ pool, schema: 'mastra; DROP TABLE x' })).toThrow(/schema/i)
+    expect(() => createRekindle({ mastra: noWorkflowsMastra, pool, schema: 'mastra; DROP TABLE x' })).toThrow(/schema/i)
   })
 
   it('migrationSql() needs the schema spelled out', () => {

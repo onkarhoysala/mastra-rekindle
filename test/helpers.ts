@@ -1,6 +1,8 @@
 import { randomUUID } from 'node:crypto'
 import pg from 'pg'
-import { createRekindle, type RekindleOptions } from '../src/index.js'
+import type { MastraLike, Rekindle, RekindleOptions } from '../src/index.js'
+import { assembleRekindle } from '../src/rekindle.js'
+import type { OwnerStore } from '../src/store.js'
 
 const url = process.env.TEST_DATABASE_URL
 if (!url) {
@@ -25,9 +27,20 @@ export async function dropSchema(pool: pg.Pool, schema: string): Promise<void> {
   await pool.query(`DROP SCHEMA IF EXISTS "${schema}" CASCADE`)
 }
 
+/** A Mastra with no workflows, for instances that never sweep. */
+export const noWorkflowsMastra: MastraLike = {
+  getWorkflow(name) {
+    throw new Error(`workflow ${name} not registered`)
+  },
+}
+
+/** A Rekindle with its heartbeat and store in reach, so tests can look alive and claim without start(). */
+export type TestRekindle = Rekindle & { store: OwnerStore; heartbeat: () => Promise<void> }
+
 /** Short timings so staleness tests take seconds, not minutes. */
-export function makeRekindle(pool: pg.Pool, schema: string, overrides: Partial<RekindleOptions> = {}) {
-  return createRekindle({
+export function makeRekindle(pool: pg.Pool, schema: string, overrides: Partial<RekindleOptions> = {}): TestRekindle {
+  const { rekindle, store, heartbeat } = assembleRekindle({
+    mastra: noWorkflowsMastra,
     pool,
     schema,
     instanceId: `inst-${randomUUID().slice(0, 8)}`,
@@ -41,6 +54,8 @@ export function makeRekindle(pool: pg.Pool, schema: string, overrides: Partial<R
     setAsDefault: false,
     ...overrides,
   })
+  // Assigned onto the Rekindle object itself, so its isDraining getter keeps working.
+  return Object.assign(rekindle, { store, heartbeat })
 }
 
 /** Make an instance look dead without waiting: push its heartbeat into the past. */

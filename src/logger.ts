@@ -15,5 +15,7 @@ export const consoleLogger: RekindleLogger = {
 }
 
 export function errorFields(err: unknown): Record<string, unknown> {
-  return err instanceof Error ? { error: err.message, errorName: err.name } : { error: String(err) }
+  return err instanceof Error
+    ? { error: err.message, errorName: err.name, stack: err.stack }
+    : { error: String(err) }
 }

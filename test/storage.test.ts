@@ -3,6 +3,7 @@ import { Mastra } from '@mastra/core/mastra'
 import { PostgresStore } from '@mastra/pg'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { createRekindle } from '../src/index.js'
+import { assembleRekindle } from '../src/rekindle.js'
 import { dropSchema, freshSchema, makePool } from './helpers.js'
 
 const pool = makePool()
@@ -24,10 +25,10 @@ afterAll(async () => {
 
 describe("uses Mastra's storage", () => {
   it("takes the pool and schema from Mastra's PostgresStore", async () => {
-    const rekindle = createRekindle({ mastra, instanceId: `inst-${randomUUID().slice(0, 8)}`, setAsDefault: false })
+    const { rekindle, heartbeat } = assembleRekindle({ mastra, instanceId: `inst-${randomUUID().slice(0, 8)}`, setAsDefault: false })
 
     await rekindle.migrate()
-    await rekindle.heartbeatOnce()
+    await heartbeat()
 
     const { rows } = await pool.query(`SELECT instance_id FROM ${schema}.rekindle_instances`)
     expect(rows.map((r) => r.instance_id)).toContain(rekindle.instanceId)
@@ -36,10 +37,10 @@ describe("uses Mastra's storage", () => {
   it('an explicit schema wins over the store', async () => {
     const other = await freshSchema(pool)
     try {
-      const rekindle = createRekindle({ mastra, schema: other, setAsDefault: false })
+      const { rekindle, heartbeat } = assembleRekindle({ mastra, schema: other, setAsDefault: false })
 
       await rekindle.migrate()
-      await rekindle.heartbeatOnce()
+      await heartbeat()
 
       const { rows } = await pool.query(`SELECT 1 FROM ${other}.rekindle_instances`)
       expect(rows).toHaveLength(1)

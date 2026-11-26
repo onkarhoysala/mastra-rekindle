@@ -1,3 +1,5 @@
+import { RekindleConfigError } from './errors.js'
+
 /**
  * rekindle's two tables. They live next to Mastra's own tables (same schema by default), so they
  * isolate per environment along with everything else.
@@ -9,22 +11,29 @@
 const IDENTIFIER = /^[a-zA-Z_][a-zA-Z0-9_]*$/
 
 /** The schema is interpolated into SQL, so only a plain identifier is accepted. */
-export function assertSchemaName(schema: string | undefined): string {
+export function assertSchemaName(schema: string): string {
   if (typeof schema !== 'string' || !IDENTIFIER.test(schema)) {
-    throw new Error(`rekindle: invalid schema name "${schema}" (letters, digits and _ only)`)
+    throw new RekindleConfigError(`invalid schema name "${schema}" (letters, digits and _ only)`)
   }
   return schema
 }
 
-/** Quoted, so a mixed-case name means the same schema it does to Mastra. */
-export function quoteSchema(schema: string): string {
-  return `"${assertSchemaName(schema)}"`
+/** Quoted, so a mixed-case name means the same schema it does to Mastra. Expects a checked name. */
+function quoted(schema: string): string {
+  return `"${schema}"`
+}
+
+/** Fully qualified table names, ready to interpolate. */
+export function tableNames(schema: string): { instances: string; owners: string } {
+  const s = quoted(assertSchemaName(schema))
+  return { instances: `${s}.rekindle_instances`, owners: `${s}.rekindle_run_owners` }
 }
 
 /** The SQL `migrate()` runs. Use it to apply the tables through your own migrations instead. */
 export function migrationSql(schema: string): string {
   const name = assertSchemaName(schema)
-  const s = quoteSchema(name)
+  const s = quoted(name)
+  const { instances, owners } = tableNames(name)
   // Sent as one multi-statement query, which Postgres runs as one transaction. The advisory lock
   // makes instances that boot together migrate one after another instead of colliding on
   // CREATE SCHEMA / CREATE TABLE.
@@ -38,23 +47,23 @@ BEGIN
   END IF;
 END $$;
 
-CREATE TABLE IF NOT EXISTS ${s}.rekindle_instances (
+CREATE TABLE IF NOT EXISTS ${instances} (
   instance_id   text PRIMARY KEY,
   heartbeat_at  timestamptz NOT NULL DEFAULT now(),
   started_at    timestamptz NOT NULL DEFAULT now()
 );
-CREATE INDEX IF NOT EXISTS rekindle_instances_heartbeat_idx ON ${s}.rekindle_instances (heartbeat_at);
+CREATE INDEX IF NOT EXISTS rekindle_instances_heartbeat_idx ON ${instances} (heartbeat_at);
 
-CREATE TABLE IF NOT EXISTS ${s}.rekindle_run_owners (
+CREATE TABLE IF NOT EXISTS ${owners} (
   workflow_name     text NOT NULL,
   run_id            text NOT NULL,
-  owner_instance_id text REFERENCES ${s}.rekindle_instances(instance_id) ON DELETE SET NULL,
+  owner_instance_id text REFERENCES ${instances}(instance_id) ON DELETE SET NULL,
   claimed_at        timestamptz NOT NULL DEFAULT now(),
   restarted_at      timestamptz,
   attempts          integer NOT NULL DEFAULT 0,
   done_at           timestamptz,
   PRIMARY KEY (workflow_name, run_id)
 );
-CREATE INDEX IF NOT EXISTS rekindle_run_owners_owner_idx ON ${s}.rekindle_run_owners (owner_instance_id);
+CREATE INDEX IF NOT EXISTS rekindle_run_owners_owner_idx ON ${owners} (owner_instance_id);
 `
 }

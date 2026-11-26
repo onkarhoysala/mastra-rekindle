@@ -19,7 +19,7 @@ afterAll(async () => {
 /** An instance that owned `runIds` and then died. */
 async function deadOwnerOf(runIds: string[], workflow = 'report') {
   const dead = makeRekindle(pool, schema)
-  await dead.heartbeatOnce()
+  await dead.heartbeat()
   for (const id of runIds) await dead.guard(workflow, id)
   await ageHeartbeat(pool, schema, dead.instanceId, 60)
   return dead
@@ -30,10 +30,10 @@ describe('sweepOnce', () => {
     rekindleWorkflow('report')
     await deadOwnerOf(['s-1', 's-2'])
     const { mastra, restarted } = fakeMastra({ report: ['s-1', 's-2'] })
-    const survivor = makeRekindle(pool, schema)
-    await survivor.heartbeatOnce()
+    const survivor = makeRekindle(pool, schema, { mastra })
+    await survivor.heartbeat()
 
-    const result = await survivor.sweepOnce(mastra)
+    const result = await survivor.sweepOnce()
 
     expect(result.restarted).toBe(2)
     expect(restarted.map((r) => r.runId).sort()).toEqual(['s-1', 's-2'])
@@ -44,10 +44,10 @@ describe('sweepOnce', () => {
     rekindleWorkflow('report')
     await deadOwnerOf(['w-1'])
     const { mastra, restarted } = fakeMastra({ report: [{ runId: 'w-1', status: 'waiting' }] })
-    const survivor = makeRekindle(pool, schema)
-    await survivor.heartbeatOnce()
+    const survivor = makeRekindle(pool, schema, { mastra })
+    await survivor.heartbeat()
 
-    await survivor.sweepOnce(mastra)
+    await survivor.sweepOnce()
 
     expect(restarted.map((r) => r.runId)).toEqual(['w-1'])
   })
@@ -57,10 +57,10 @@ describe('sweepOnce', () => {
     const ids = ['p-1', 'p-2', 'p-3', 'p-4', 'p-5']
     await deadOwnerOf(ids)
     const { mastra, restarted, listCalls } = fakeMastra({ report: ids })
-    const survivor = makeRekindle(pool, schema, { sweepPageSize: 2 })
-    await survivor.heartbeatOnce()
+    const survivor = makeRekindle(pool, schema, { mastra, sweepPageSize: 2 })
+    await survivor.heartbeat()
 
-    await survivor.sweepOnce(mastra)
+    await survivor.sweepOnce()
 
     expect(restarted.map((r) => r.runId).sort()).toEqual(ids)
     expect(listCalls.length).toBeGreaterThan(0)
@@ -73,10 +73,10 @@ describe('sweepOnce', () => {
   it('never touches workflows that did not opt in', async () => {
     rekindleWorkflow('report')
     const { mastra, restarted } = fakeMastra({ report: [], oneShot: ['o-1'] })
-    const survivor = makeRekindle(pool, schema)
-    await survivor.heartbeatOnce()
+    const survivor = makeRekindle(pool, schema, { mastra })
+    await survivor.heartbeat()
 
-    await survivor.sweepOnce(mastra)
+    await survivor.sweepOnce()
 
     expect(restarted).toEqual([])
     expect(await ownerOf(pool, schema, 'o-1')).toBeUndefined()
@@ -85,13 +85,13 @@ describe('sweepOnce', () => {
   it('leaves runs owned by a live instance alone', async () => {
     rekindleWorkflow('report')
     const live = makeRekindle(pool, schema)
-    await live.heartbeatOnce()
+    await live.heartbeat()
     await live.guard('report', 'l-1')
     const { mastra, restarted } = fakeMastra({ report: ['l-1'] })
-    const other = makeRekindle(pool, schema)
-    await other.heartbeatOnce()
+    const other = makeRekindle(pool, schema, { mastra })
+    await other.heartbeat()
 
-    await other.sweepOnce(mastra)
+    await other.sweepOnce()
 
     expect(restarted).toEqual([])
     expect((await ownerOf(pool, schema, 'l-1'))?.owner_instance_id).toBe(live.instanceId)
@@ -100,10 +100,10 @@ describe('sweepOnce', () => {
   it('leaves an ownerless run alone while Mastra is still updating it', async () => {
     rekindleWorkflow('report')
     const { mastra, restarted } = fakeMastra({ report: [{ runId: 'n-1', updatedAt: new Date() }] })
-    const survivor = makeRekindle(pool, schema)
-    await survivor.heartbeatOnce()
+    const survivor = makeRekindle(pool, schema, { mastra })
+    await survivor.heartbeat()
 
-    await survivor.sweepOnce(mastra)
+    await survivor.sweepOnce()
 
     expect(restarted).toEqual([])
   })
@@ -116,14 +116,14 @@ describe('sweepOnce', () => {
     await deadOwnerOf(reportRuns, 'report')
     await deadOwnerOf(importRuns, 'import')
     const { mastra, restarted } = fakeMastra({ report: reportRuns, import: importRuns })
-    const survivor = makeRekindle(pool, schema, { maxRestartsPerSweep: 4 })
-    await survivor.heartbeatOnce()
+    const survivor = makeRekindle(pool, schema, { mastra, maxRestartsPerSweep: 4 })
+    await survivor.heartbeat()
 
-    const first = await survivor.sweepOnce(mastra)
+    const first = await survivor.sweepOnce()
     expect(first.restarted).toBe(4)
     expect(restarted).toHaveLength(4)
 
-    const second = await survivor.sweepOnce(mastra)
+    const second = await survivor.sweepOnce()
     expect(second.restarted).toBe(2)
     expect(restarted).toHaveLength(6)
   })
@@ -132,10 +132,10 @@ describe('sweepOnce', () => {
     rekindleWorkflow('report')
     await deadOwnerOf(['f-1'])
     const { mastra } = fakeMastra({ report: ['f-1'] }, { failRestart: new Set(['f-1']) })
-    const survivor = makeRekindle(pool, schema)
-    await survivor.heartbeatOnce()
+    const survivor = makeRekindle(pool, schema, { mastra })
+    await survivor.heartbeat()
 
-    await survivor.sweepOnce(mastra)
+    await survivor.sweepOnce()
     await sleep(100) // restart is fire-and-forget; let its rejection land
 
     expect((await ownerOf(pool, schema, 'f-1'))?.owner_instance_id).toBeNull()
@@ -147,9 +147,9 @@ describe('lifecycle', () => {
     rekindleWorkflow('report')
     const runs: string[] = []
     const { mastra, restarted, listCalls } = fakeMastra({ report: runs })
-    const rk = makeRekindle(pool, schema, { sweepIntervalMs: 300 })
+    const rk = makeRekindle(pool, schema, { mastra, sweepIntervalMs: 300 })
 
-    await rk.start(mastra)
+    await rk.start()
     await sleep(100)
     const beat1 = await heartbeatAt(rk.instanceId)
     expect(beat1).toBeInstanceOf(Date)
@@ -171,11 +171,11 @@ describe('lifecycle', () => {
 
   it('start() lets go of runs held under the same instanceId by a previous boot', async () => {
     const before = makeRekindle(pool, schema, { instanceId: 'pod-0' })
-    await before.heartbeatOnce()
+    await before.heartbeat()
     await before.guard('report', 'reboot-1')
 
     const after = makeRekindle(pool, schema, { instanceId: 'pod-0', workflows: [] })
-    await after.start(fakeMastra({}).mastra)
+    await after.start()
     await after.stop()
 
     expect((await ownerOf(pool, schema, 'reboot-1'))?.owner_instance_id).toBeNull()
@@ -183,10 +183,10 @@ describe('lifecycle', () => {
 
   it('start() twice does not leave a second heartbeat or sweep loop running after stop()', async () => {
     const { mastra, listCalls } = fakeMastra({ report: [] })
-    const rk = makeRekindle(pool, schema, { workflows: ['report'], sweepIntervalMs: 100 })
+    const rk = makeRekindle(pool, schema, { mastra, workflows: ['report'], sweepIntervalMs: 100 })
 
-    await rk.start(mastra)
-    await rk.start(mastra)
+    await rk.start()
+    await rk.start()
     await sleep(250)
     await rk.stop()
     const beatAtStop = await heartbeatAt(rk.instanceId)
@@ -205,11 +205,11 @@ describe('lifecycle', () => {
     await pool.query(`UPDATE "${schema}".rekindle_run_owners SET attempts = 3 WHERE run_id = 'm-1'`)
     const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn() }
     const { mastra, restarted } = fakeMastra({ report: ['m-1'] })
-    const survivor = makeRekindle(pool, schema, { logger })
-    await survivor.heartbeatOnce()
+    const survivor = makeRekindle(pool, schema, { mastra, logger })
+    await survivor.heartbeat()
 
-    await survivor.sweepOnce(mastra)
-    await survivor.sweepOnce(mastra)
+    await survivor.sweepOnce()
+    await survivor.sweepOnce()
 
     expect(restarted).toEqual([])
     const warnings = logger.warn.mock.calls.filter(([, meta]) => meta?.runId === 'm-1')
@@ -220,7 +220,7 @@ describe('lifecycle', () => {
   it('installSignalHandlers() drains, then lets the signal exit the process', async () => {
     const kill = vi.spyOn(process, 'kill').mockImplementation(() => true)
     const rk = makeRekindle(pool, schema, { workflows: [] })
-    await rk.start(fakeMastra({}).mastra)
+    await rk.start()
     rk.installSignalHandlers({ signals: ['SIGUSR2'] })
     try {
       process.emit('SIGUSR2', 'SIGUSR2')
@@ -237,10 +237,10 @@ describe('lifecycle', () => {
     const unmigrated = `rk_unmigrated_${Date.now()}`
     const rk = makeRekindle(pool, unmigrated, { workflows: [] })
     try {
-      await expect(rk.start(fakeMastra({}).mastra)).rejects.toThrow()
+      await expect(rk.start()).rejects.toThrow()
 
       await rk.migrate()
-      await rk.start(fakeMastra({}).mastra)
+      await rk.start()
 
       const { rows } = await pool.query(`SELECT 1 FROM "${unmigrated}".rekindle_instances WHERE instance_id = $1`, [
         rk.instanceId,
@@ -259,7 +259,7 @@ describe('lifecycle', () => {
       shutdownRan = true
     })
     const rk = makeRekindle(pool, schema, { workflows: [] })
-    await rk.start(fakeMastra({}).mastra)
+    await rk.start()
     rk.installSignalHandlers({ signals: ['SIGUSR2'] })
     try {
       process.emit('SIGUSR2', 'SIGUSR2')
@@ -280,7 +280,7 @@ describe('lifecycle', () => {
   it('installSignalHandlers({ exit: false }) only drains', async () => {
     const kill = vi.spyOn(process, 'kill').mockImplementation(() => true)
     const rk = makeRekindle(pool, schema, { workflows: [] })
-    await rk.start(fakeMastra({}).mastra)
+    await rk.start()
     rk.installSignalHandlers({ signals: ['SIGUSR2'], exit: false })
     try {
       process.emit('SIGUSR2', 'SIGUSR2')

@@ -17,14 +17,14 @@ afterAll(async () => {
 describe('guard (the per-step fence)', () => {
   it('takes an unowned run', async () => {
     const a = makeRekindle(pool, schema)
-    await a.heartbeatOnce()
+    await a.heartbeat()
     await a.guard('wf', 'g-unowned')
     expect((await ownerOf(pool, schema, 'g-unowned'))?.owner_instance_id).toBe(a.instanceId)
   })
 
   it('passes on every step of a run it already owns', async () => {
     const a = makeRekindle(pool, schema)
-    await a.heartbeatOnce()
+    await a.heartbeat()
     await a.guard('wf', 'g-mine')
     await expect(a.guard('wf', 'g-mine')).resolves.toBeUndefined()
     await expect(a.guard('wf', 'g-mine')).resolves.toBeUndefined()
@@ -33,12 +33,12 @@ describe('guard (the per-step fence)', () => {
   it('aborts with OwnershipLostError when a live instance owns the run (the zombie case)', async () => {
     const rescuer = makeRekindle(pool, schema)
     const zombie = makeRekindle(pool, schema)
-    await rescuer.heartbeatOnce()
-    await zombie.heartbeatOnce()
+    await rescuer.heartbeat()
+    await zombie.heartbeat()
     // The rescuer has taken over; the stalled original wakes up and reaches its next step.
     await rescuer.guard('wf', 'g-zombie')
     // Keep both visibly alive for the whole retry window.
-    const beat = setInterval(() => void Promise.all([rescuer.heartbeatOnce(), zombie.heartbeatOnce()]), 200)
+    const beat = setInterval(() => void Promise.all([rescuer.heartbeat(), zombie.heartbeat()]), 200)
     try {
       await expect(zombie.guard('wf', 'g-zombie')).rejects.toBeInstanceOf(OwnershipLostError)
     } finally {
@@ -50,8 +50,8 @@ describe('guard (the per-step fence)', () => {
   it('takes over from a dead owner', async () => {
     const dead = makeRekindle(pool, schema)
     const next = makeRekindle(pool, schema)
-    await dead.heartbeatOnce()
-    await next.heartbeatOnce()
+    await dead.heartbeat()
+    await next.heartbeat()
     await dead.guard('wf', 'g-dead')
     await ageHeartbeat(pool, schema, dead.instanceId, 60)
 
@@ -63,11 +63,11 @@ describe('guard (the per-step fence)', () => {
   it('waits out the stale window when the owner dies just before the guard runs', async () => {
     const dying = makeRekindle(pool, schema)
     const next = makeRekindle(pool, schema)
-    await dying.heartbeatOnce()
-    await next.heartbeatOnce()
+    await dying.heartbeat()
+    await next.heartbeat()
     await dying.guard('wf', 'g-dying')
     // Fresh heartbeat, then silence: it goes stale ~2s from now, inside the guard's retry window.
-    const beat = setInterval(() => void next.heartbeatOnce(), 200)
+    const beat = setInterval(() => void next.heartbeat(), 200)
     const started = Date.now()
     try {
       await next.guard('wf', 'g-dying')
@@ -89,7 +89,7 @@ describe('guard (the per-step fence)', () => {
     const a = makeRekindle(pool, schema, { workflows: [] })
     const guarded = a.guard('wf', 'g-early')
     await sleep(300) // eg the app boots rekindle without awaiting it, and a run lands first
-    await a.start({ getWorkflow: () => { throw new Error('unused') } })
+    await a.start()
     try {
       await expect(guarded).resolves.toBeUndefined()
       expect((await ownerOf(pool, schema, 'g-early'))?.owner_instance_id).toBe(a.instanceId)
@@ -100,7 +100,7 @@ describe('guard (the per-step fence)', () => {
 
   it('fails at once, saying so, on a run already marked done', async () => {
     const a = makeRekindle(pool, schema)
-    await a.heartbeatOnce()
+    await a.heartbeat()
     await a.guard('wf', 'g-done')
     await a.clear('wf', 'g-done')
 
@@ -113,7 +113,7 @@ describe('guard (the per-step fence)', () => {
 
   it('fails at once, saying so, when this instance is stopped and its heartbeat is stale', async () => {
     const a = makeRekindle(pool, schema)
-    await a.heartbeatOnce()
+    await a.heartbeat()
     await a.guard('wf', 'g-self-stale')
     await ageHeartbeat(pool, schema, a.instanceId, 60)
 
@@ -126,7 +126,7 @@ describe('guard (the per-step fence)', () => {
 
   it('heartbeats and carries on when a running instance finds its own heartbeat stale and nobody took over', async () => {
     const a = makeRekindle(pool, schema, { workflows: [] })
-    await a.start({ getWorkflow: () => { throw new Error('unused') } })
+    await a.start()
     try {
       await a.guard('wf', 'g-stall')
       await ageHeartbeat(pool, schema, a.instanceId, 60) // eg the event loop stalled

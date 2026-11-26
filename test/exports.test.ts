@@ -5,6 +5,7 @@ describe('public API', () => {
   it('exports exactly these runtime values', () => {
     expect(Object.keys(rekindle).sort()).toEqual([
       'OwnershipLostError',
+      'RekindleConfigError',
       'RekindleNotStartedError',
       'consoleLogger',
       'createRekindle',
